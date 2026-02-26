@@ -1,3 +1,7 @@
+#You need to instal pyTorch
+pip install torch
+pip install torch-geometric
+
 #to get access to hugging face
 from huggingface_hub import login
 login(token="add your own hugging face access token")
