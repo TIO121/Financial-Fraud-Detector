@@ -2,7 +2,7 @@
 # GRAPH STRUCTURE
 # Nodes: nameOrig and nameDest
 # Edges: transaction between the accounts - meaning the transaction between nameOrig and nameDest (nameOrig -> nameDest)
-# Edge features: step, type, amount, nameOrig, oldbalanceOrg, newbalanceOrig, nameDest, oldbalanceDest, newbalanceDest.
+# Edge features: step, type, amount, oldbalanceOrg, newbalanceOrig, oldbalanceDest, newbalanceDest.
 # Labels: isFraud and isFlaggedFraud
 # Graph type: Homogeneous graph
 # ---------------------------------------------------------
