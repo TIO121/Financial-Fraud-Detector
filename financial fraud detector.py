@@ -7,7 +7,7 @@
 # Graph type: Homogeneous graph
 # ---------------------------------------------------------
 
-#You need to instal pyTorch
+#You need to install pyTorch
 pip install torch
 pip install torch-geometric
 
