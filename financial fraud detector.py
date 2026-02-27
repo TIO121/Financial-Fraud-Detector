@@ -10,6 +10,16 @@
 #You need to install pyTorch
 pip install torch
 pip install torch-geometric
+#-------------------------------------
+import torch
+import pandas as pd
+import networkx as nx
+import matplotlib.pyplot as plt
+from datasets import load_dataset
+from torch_geometric.data import Data
+from torch_geometric.utils import degree
+from torch_geometric.loader import NeighborLoader
+from huggingface_hub import login
 
 # ---------------------------------------------------------
 #To get access to hugging face
@@ -18,17 +28,14 @@ pip install torch-geometric
 #3) Lastly, click new token
 #4) Note: Thats your own unique token to access the Cifer dataset
 # ---------------------------------------------------------
-from huggingface_hub import login
 login(token="add your own hugging face access token")
 
 #to get access to the dataset
-from datasets import load_dataset
 # Login using e.g. `huggingface-cli login` to access this dataset
 ds = load_dataset("CiferAI/Cifer-Fraud-Detection-Dataset-AF")
 print(ds)
 
 #dataframe of the dataset
-import pandas as pd
 column_names = [
     'step', 'type', 'amount', 'nameOrig', 'oldbalanceOrg',
     'newbalanceOrig', 'nameDest', 'oldbalanceDest', 'newbalanceDest',
@@ -78,10 +85,6 @@ labels = df[[
 ]]
 labels.head(10)
 
-import torch
-from torch_geometric.data import Data
-from torch_geometric.utils import degree
-
 data = Data(
     edge_index=torch.tensor(edge_index, dtype=torch.long),
     edge_attr=torch.tensor(edges_features.values, dtype=torch.float),
@@ -91,31 +94,21 @@ data = Data(
 
 deg_out = degree(data.edge_index[0], num_nodes=data.num_nodes)
 deg_in = degree(data.edge_index[1], num_nodes=data.num_nodes)
-
 data.x = torch.stack([deg_out, deg_in], dim=1)
 data.x = torch.log1p(data.x)
-
 print(data)
 
 #NeighborLoader for mini‑batch training because the graph is too large to train in one shot.
-from torch_geometric.loader import NeighborLoader
-
 loader = NeighborLoader(
     data,
     num_neighbors=[10, 10],
     batch_size=1024,
 )
 
-#visualize the graph
-import networkx as nx
-import matplotlib.pyplot as plt
-
-# take first 100 edges
+#visualize the graph and take first 100 edges
 subset = data.edge_index[:, :500].numpy()
-
 G = nx.DiGraph()
 G.add_edges_from(subset.T)
-
 plt.figure(figsize=(8, 8))
 nx.draw(G, node_size=20)
 plt.show()
