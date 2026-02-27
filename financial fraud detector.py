@@ -2,7 +2,11 @@
 pip install torch
 pip install torch-geometric
 
-#to get access to hugging face
+#To get access to hugging face
+#1) You will need to create an account on hugging face 
+#2) Then go to your profile and click on access tokens 
+#3) Lastly, click new token
+#4) Note: Thats your own unique token to access the Cifer dataset
 from huggingface_hub import login
 login(token="add your own hugging face access token")
 
