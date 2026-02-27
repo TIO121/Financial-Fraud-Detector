@@ -1,12 +1,23 @@
+# ---------------------------------------------------------
+# GRAPH STRUCTURE
+# Nodes: nameOrig and nameDest
+# Edges: transaction between the accounts - meaning the transaction between nameOrig and nameDest (nameOrig -> nameDest)
+# Edge features: step, type, amount, nameOrig, oldbalanceOrg, newbalanceOrig, nameDest, oldbalanceDest, newbalanceDest.
+# Labels: isFraud and isFlaggedFraud
+# Graph type: Homogeneous graph
+# ---------------------------------------------------------
+
 #You need to instal pyTorch
 pip install torch
 pip install torch-geometric
 
+# ---------------------------------------------------------
 #To get access to hugging face
 #1) You will need to create an account on hugging face 
 #2) Then go to your profile and click on access tokens 
 #3) Lastly, click new token
 #4) Note: Thats your own unique token to access the Cifer dataset
+# ---------------------------------------------------------
 from huggingface_hub import login
 login(token="add your own hugging face access token")
 
