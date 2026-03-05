@@ -8,8 +8,8 @@
 # ---------------------------------------------------------
 
 #You need to install pyTorch
-pip install torch
-pip install torch-geometric
+#pip install torch
+#pip install torch-geometric
 #-------------------------------------
 import torch
 import pandas as pd
