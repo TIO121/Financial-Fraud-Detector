@@ -115,6 +115,16 @@ data.val_mask[perm[train_end:val_end]] = True
 data.test_mask[perm[val_end:]] = True
 
 # ---------------------------------------------------------
+# NeighborLoader (kept exactly as you had it)
+# ---------------------------------------------------------
+train_loader = NeighborLoader(
+    data,
+    num_neighbors=[10, 10],
+    batch_size=1024,
+    input_nodes=data.train_mask,
+)
+
+# ---------------------------------------------------------
 # Handle class imbalance
 # ---------------------------------------------------------
 class_counts = torch.bincount(data.y)
@@ -184,21 +194,25 @@ history = {
 }
 
 # ---------------------------------------------------------
-# Full-graph Training loop
+# Training loop (NeighborLoader kept)
 # ---------------------------------------------------------
 for epoch in range(1, 11):
     model.train()
-    optimizer.zero_grad()
+    total_loss = 0
 
-    out = model(data.x, data.edge_index)
-    loss = criterion(out[data.train_mask], data.y[data.train_mask])
-    loss.backward()
-    optimizer.step()
+    for batch in train_loader:
+        batch = batch.to(device)
+        optimizer.zero_grad()
+        out = model(batch.x, batch.edge_index)
+        loss = criterion(out, batch.y)
+        loss.backward()
+        optimizer.step()
+        total_loss += loss.item()
 
     train_acc, train_f1, train_prec, train_rec = evaluate(data.train_mask)
     val_acc, val_f1, val_prec, val_rec = evaluate(data.val_mask)
 
-    print(f"Epoch {epoch:02d} | Loss: {loss:.4f} | "
+    print(f"Epoch: {epoch:02d} | Loss: {total_loss:.4f} | "
           f"Train Acc: {train_acc:.4f} F1: {train_f1:.4f} "
           f"Prec: {train_prec:.4f} Rec: {train_rec:.4f} | "
           f"Val Acc: {val_acc:.4f} F1: {val_f1:.4f} "
@@ -224,4 +238,5 @@ print(f"\nTest Acc: {test_acc:.4f}, Test F1: {test_f1:.4f}, "
 results_df = pd.DataFrame(history)
 print(results_df)
 results_df.to_csv("training_results.csv", index=False)
+
 
