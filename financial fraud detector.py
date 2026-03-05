@@ -1,8 +1,9 @@
 # ---------------------------------------------------------
-# GRAPH STRUCTURE
-# Nodes: nameOrig and nameDest
+# GRAPH STRUCTURE (Node Classification for Account Takeover Fraud)
+# Nodes: nameOrig and nameDest (Accounts)
 # Edges: transaction between the accounts - meaning the transaction between nameOrig and nameDest (nameOrig -> nameDest)
 # Edge features: step, type, amount, oldbalanceOrg, newbalanceOrig, oldbalanceDest, newbalanceDest.
+# Nodes labels: isFraud (1 if the account is involved in a fraudulent transaction, 0 otherwise)
 # Labels: isFraud and isFlaggedFraud
 # Graph type: Homogeneous graph
 # ---------------------------------------------------------
@@ -10,105 +11,214 @@
 #You need to install pyTorch
 #pip install torch
 #pip install torch-geometric
-#-------------------------------------
+
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 import pandas as pd
-import networkx as nx
-import matplotlib.pyplot as plt
 from datasets import load_dataset
+from torch_geometric.nn import SAGEConv
 from torch_geometric.data import Data
 from torch_geometric.utils import degree
 from torch_geometric.loader import NeighborLoader
+from sklearn.metrics import accuracy_score, f1_score
 from huggingface_hub import login
 
 # ---------------------------------------------------------
+# HuggingFace login
 #To get access to hugging face
 #1) You will need to create an account on hugging face 
 #2) Then go to your profile and click on access tokens 
 #3) Lastly, click new token
 #4) Note: Thats your own unique token to access the Cifer dataset
 # ---------------------------------------------------------
-login(token="add your own hugging face access token")
+login(token="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")
 
-#to get access to the dataset
-# Login using e.g. `huggingface-cli login` to access this dataset
+# ---------------------------------------------------------
+# Load dataset
+# ---------------------------------------------------------
 ds = load_dataset("CiferAI/Cifer-Fraud-Detection-Dataset-AF")
-print(ds)
 
-#dataframe of the dataset
 column_names = [
     'step', 'type', 'amount', 'nameOrig', 'oldbalanceOrg',
     'newbalanceOrig', 'nameDest', 'oldbalanceDest', 'newbalanceDest',
     'isFraud', 'isFlaggedFraud'
 ]
+
 df = ds["train"].to_pandas()[column_names]
-df
 
-#pre-processing
+# ---------------------------------------------------------
+# Preprocessing
+# ---------------------------------------------------------
 df = df.drop_duplicates()
-print(df.isna().sum()) 
-#Fill NA only in numeric columns if needed 
-numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns 
+numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
 df[numeric_cols] = df[numeric_cols].fillna(0)
-
-#Check constant columns 
-constant_columns = [col for col in df.columns if df[col].nunique() == 1] 
-print("Constant columns found:", constant_columns)
-
-# Convert categorical column to numeric 
 df["type"] = df["type"].astype("category").cat.codes
 
-#nodes
+# ---------------------------------------------------------
+# Build graph
+# ---------------------------------------------------------
 nodes = pd.unique(df[["nameOrig", "nameDest"]].values.ravel())
-print(nodes[:10])
 node_to_id = {node: i for i, node in enumerate(nodes)}
 
-#edges
-edges = df[["nameOrig", "nameDest"]]
-edges.head(10)
-
-#edges index
 edge_index = df[["nameOrig", "nameDest"]].applymap(node_to_id.get).values.T
-print(edge_index[:, :10])
 
-#edge features
-edges_features = df[[
+edge_features = df[[
     "step", "type", "amount",
     "oldbalanceOrg", "newbalanceOrig",
     "oldbalanceDest", "newbalanceDest"
 ]]
-edges_features.head(10)
 
-#lables
-labels = df[[
-    'isFraud', 'isFlaggedFraud'
-]]
-labels.head(10)
+transaction_labels = df["isFraud"].values  # edge-level labels
 
 data = Data(
     edge_index=torch.tensor(edge_index, dtype=torch.long),
-    edge_attr=torch.tensor(edges_features.values, dtype=torch.float),
-    y=torch.tensor(labels["isFraud"].values, dtype=torch.long),
+    edge_attr=torch.tensor(edge_features.values, dtype=torch.float),
     num_nodes=len(nodes)
 )
 
+# ---------------------------------------------------------
+# Node features (degree-based)
+# ---------------------------------------------------------
 deg_out = degree(data.edge_index[0], num_nodes=data.num_nodes)
 deg_in = degree(data.edge_index[1], num_nodes=data.num_nodes)
-data.x = torch.stack([deg_out, deg_in], dim=1)
-data.x = torch.log1p(data.x)
-print(data)
+data.x = torch.log1p(torch.stack([deg_out, deg_in], dim=1))
 
-#NeighborLoader for mini‑batch training because the graph is too large to train in one shot.
-loader = NeighborLoader(
+# ---------------------------------------------------------
+# Convert transaction-level fraud → account-level fraud
+# ---------------------------------------------------------
+node_labels = torch.zeros(data.num_nodes, dtype=torch.long)
+src_nodes = data.edge_index[0]
+edge_fraud = torch.tensor(transaction_labels, dtype=torch.long)
+
+node_labels[src_nodes[edge_fraud == 1]] = 1
+data.y = node_labels
+
+print("Node-level fraud labels created.")
+
+# ---------------------------------------------------------
+# Train/Val/Test split (node-level)
+# 70% → training
+# 15% → validation
+# 15% → testing
+# ---------------------------------------------------------
+num_nodes = data.num_nodes
+perm = torch.randperm(num_nodes)
+
+train_end = int(0.7 * num_nodes)
+val_end = int(0.85 * num_nodes)
+
+data.train_mask = torch.zeros(num_nodes, dtype=torch.bool)
+data.val_mask = torch.zeros(num_nodes, dtype=torch.bool)
+data.test_mask = torch.zeros(num_nodes, dtype=torch.bool)
+
+data.train_mask[perm[:train_end]] = True
+data.val_mask[perm[train_end:val_end]] = True
+data.test_mask[perm[val_end:]] = True
+
+# ---------------------------------------------------------
+# NeighborLoader for mini-batch training
+# ---------------------------------------------------------
+train_loader = NeighborLoader(
     data,
     num_neighbors=[10, 10],
     batch_size=1024,
+    input_nodes=data.train_mask,
 )
 
-#visualize the graph and take first 100 edges
-subset = data.edge_index[:, :500].numpy()
-G = nx.DiGraph()
-G.add_edges_from(subset.T)
-plt.figure(figsize=(8, 8))
-nx.draw(G, node_size=20)
-plt.show()
+# ---------------------------------------------------------
+# Handle class imbalance
+# ---------------------------------------------------------
+class_counts = torch.bincount(data.y)
+class_weights = 1.0 / (class_counts.float() + 1e-6)
+class_weights = class_weights * (2 / class_weights.sum())
+
+# ---------------------------------------------------------
+# GraphSAGE Model
+# ---------------------------------------------------------
+class GraphSAGE(nn.Module):
+    def __init__(self, in_channels, hidden_channels, out_channels, dropout=0.2):
+        super().__init__()
+        self.conv1 = SAGEConv(in_channels, hidden_channels)
+        self.conv2 = SAGEConv(hidden_channels, hidden_channels)
+        self.lin = nn.Linear(hidden_channels, out_channels)
+        self.dropout = dropout
+
+    def forward(self, x, edge_index):
+        x = F.relu(self.conv1(x, edge_index))
+        x = F.dropout(x, p=self.dropout, training=self.training)
+        x = F.relu(self.conv2(x, edge_index))
+        x = F.dropout(x, p=self.dropout, training=self.training)
+        return self.lin(x)
+
+# ---------------------------------------------------------
+# Training setup
+# ---------------------------------------------------------
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = GraphSAGE(in_channels=2, hidden_channels=64, out_channels=2).to(device)
+data = data.to(device)
+class_weights = class_weights.to(device)
+
+criterion = nn.CrossEntropyLoss(weight=class_weights)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+
+# ---------------------------------------------------------
+# Evaluation function
+# ---------------------------------------------------------
+def evaluate(mask):
+    model.eval()
+    with torch.no_grad():
+        out = model(data.x, data.edge_index)
+        preds = out.argmax(dim=1)
+        y_true = data.y[mask].cpu()
+        y_pred = preds[mask].cpu()
+        return accuracy_score(y_true, y_pred), f1_score(y_true, y_pred)
+
+# ---------------------------------------------------------
+# Table for Results
+# ---------------------------------------------------------
+history = {
+    "epoch": [],
+    "train_acc": [],
+    "train_f1": [],
+    "val_acc": [],
+    "val_f1": []
+}
+
+# ---------------------------------------------------------
+# Training loop
+# ---------------------------------------------------------
+for epoch in range(1, 11):
+    model.train()
+    total_loss = 0
+
+    for batch in train_loader:
+        batch = batch.to(device)
+        optimizer.zero_grad()
+        out = model(batch.x, batch.edge_index)
+        loss = criterion(out, batch.y)
+        loss.backward()
+        optimizer.step()
+        total_loss += loss.item()
+
+    train_acc, train_f1 = evaluate(data.train_mask)
+    val_acc, val_f1 = evaluate(data.val_mask)
+
+    print(f"Epoch: {epoch:02d} | Loss: {total_loss:.4f} | "
+          f"Train Acc: {train_acc:.4f} F1: {train_f1:.4f} | "
+          f"Val Acc: {val_acc:.4f} F1: {val_f1:.4f}")
+
+    history["epoch"].append(epoch)
+    history["train_acc"].append(train_acc)
+    history["train_f1"].append(train_f1)
+    history["val_acc"].append(val_acc)
+    history["val_f1"].append(val_f1)
+
+# ---------------------------------------------------------
+# Final test performance
+# ---------------------------------------------------------
+test_acc, test_f1 = evaluate(data.test_mask)
+print(f"Test Acc: {test_acc:.4f}, Test F1: {test_f1:.4f}")
+results_df = pd.DataFrame(history)
+print(results_df)
+results_df.to_csv("training_results.csv", index=False)
