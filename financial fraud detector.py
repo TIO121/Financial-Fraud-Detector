@@ -32,6 +32,7 @@ from huggingface_hub import login
 #3) Lastly, click new token
 #4) Note: Thats your own unique token to access the Cifer dataset
 # ---------------------------------------------------------
+
 login(token="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")
 
 # ---------------------------------------------------------
@@ -69,7 +70,7 @@ edge_features = df[[
     "oldbalanceDest", "newbalanceDest"
 ]]
 
-transaction_labels = df["isFraud"].values  # edge-level labels
+transaction_labels = df["isFraud"].values
 
 data = Data(
     edge_index=torch.tensor(edge_index, dtype=torch.long),
@@ -97,10 +98,7 @@ data.y = node_labels
 print("Node-level fraud labels created.")
 
 # ---------------------------------------------------------
-# Train/Val/Test split (node-level)
-# 70% → training
-# 15% → validation
-# 15% → testing
+# Train/Val/Test split
 # ---------------------------------------------------------
 num_nodes = data.num_nodes
 perm = torch.randperm(num_nodes)
@@ -115,16 +113,6 @@ data.test_mask = torch.zeros(num_nodes, dtype=torch.bool)
 data.train_mask[perm[:train_end]] = True
 data.val_mask[perm[train_end:val_end]] = True
 data.test_mask[perm[val_end:]] = True
-
-# ---------------------------------------------------------
-# NeighborLoader for mini-batch training
-# ---------------------------------------------------------
-train_loader = NeighborLoader(
-    data,
-    num_neighbors=[10, 10],
-    batch_size=1024,
-    input_nodes=data.train_mask,
-)
 
 # ---------------------------------------------------------
 # Handle class imbalance
@@ -163,7 +151,7 @@ criterion = nn.CrossEntropyLoss(weight=class_weights)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 # ---------------------------------------------------------
-# Evaluation function
+# Evaluation function (Acc, F1, Precision, Recall)
 # ---------------------------------------------------------
 def evaluate(mask):
     model.eval()
@@ -172,7 +160,13 @@ def evaluate(mask):
         preds = out.argmax(dim=1)
         y_true = data.y[mask].cpu()
         y_pred = preds[mask].cpu()
-        return accuracy_score(y_true, y_pred), f1_score(y_true, y_pred)
+
+        acc = accuracy_score(y_true, y_pred)
+        f1 = f1_score(y_true, y_pred)
+        precision = precision_score(y_true, y_pred)
+        recall = recall_score(y_true, y_pred)
+
+        return acc, f1, precision, recall
 
 # ---------------------------------------------------------
 # Table for Results
@@ -181,44 +175,53 @@ history = {
     "epoch": [],
     "train_acc": [],
     "train_f1": [],
+    "train_precision": [],
+    "train_recall": [],
     "val_acc": [],
-    "val_f1": []
+    "val_f1": [],
+    "val_precision": [],
+    "val_recall": []
 }
 
 # ---------------------------------------------------------
-# Training loop
+# Full-graph Training loop
 # ---------------------------------------------------------
 for epoch in range(1, 11):
     model.train()
-    total_loss = 0
+    optimizer.zero_grad()
 
-    for batch in train_loader:
-        batch = batch.to(device)
-        optimizer.zero_grad()
-        out = model(batch.x, batch.edge_index)
-        loss = criterion(out, batch.y)
-        loss.backward()
-        optimizer.step()
-        total_loss += loss.item()
+    out = model(data.x, data.edge_index)
+    loss = criterion(out[data.train_mask], data.y[data.train_mask])
+    loss.backward()
+    optimizer.step()
 
-    train_acc, train_f1 = evaluate(data.train_mask)
-    val_acc, val_f1 = evaluate(data.val_mask)
+    train_acc, train_f1, train_prec, train_rec = evaluate(data.train_mask)
+    val_acc, val_f1, val_prec, val_rec = evaluate(data.val_mask)
 
-    print(f"Epoch: {epoch:02d} | Loss: {total_loss:.4f} | "
-          f"Train Acc: {train_acc:.4f} F1: {train_f1:.4f} | "
-          f"Val Acc: {val_acc:.4f} F1: {val_f1:.4f}")
+    print(f"Epoch {epoch:02d} | Loss: {loss:.4f} | "
+          f"Train Acc: {train_acc:.4f} F1: {train_f1:.4f} "
+          f"Prec: {train_prec:.4f} Rec: {train_rec:.4f} | "
+          f"Val Acc: {val_acc:.4f} F1: {val_f1:.4f} "
+          f"Prec: {val_prec:.4f} Rec: {val_rec:.4f}")
 
     history["epoch"].append(epoch)
     history["train_acc"].append(train_acc)
     history["train_f1"].append(train_f1)
+    history["train_precision"].append(train_prec)
+    history["train_recall"].append(train_rec)
     history["val_acc"].append(val_acc)
     history["val_f1"].append(val_f1)
+    history["val_precision"].append(val_prec)
+    history["val_recall"].append(val_rec)
 
 # ---------------------------------------------------------
 # Final test performance
 # ---------------------------------------------------------
-test_acc, test_f1 = evaluate(data.test_mask)
-print(f"Test Acc: {test_acc:.4f}, Test F1: {test_f1:.4f}")
+test_acc, test_f1, test_prec, test_rec = evaluate(data.test_mask)
+print(f"\nTest Acc: {test_acc:.4f}, Test F1: {test_f1:.4f}, "
+      f"Test Precision: {test_prec:.4f}, Test Recall: {test_rec:.4f}")
+
 results_df = pd.DataFrame(history)
 print(results_df)
 results_df.to_csv("training_results.csv", index=False)
+
