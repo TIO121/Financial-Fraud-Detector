@@ -21,7 +21,7 @@ from torch_geometric.nn import SAGEConv
 from torch_geometric.data import Data
 from torch_geometric.utils import degree
 from torch_geometric.loader import NeighborLoader
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 from huggingface_hub import login
 
 # ---------------------------------------------------------
@@ -238,5 +238,3 @@ print(f"\nTest Acc: {test_acc:.4f}, Test F1: {test_f1:.4f}, "
 results_df = pd.DataFrame(history)
 print(results_df)
 results_df.to_csv("training_results.csv", index=False)
-
-
