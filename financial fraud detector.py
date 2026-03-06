@@ -6,6 +6,8 @@
 # Nodes labels: isFraud (1 if the account is involved in a fraudulent transaction, 0 otherwise)
 # Labels: isFraud and isFlaggedFraud
 # Graph type: Homogeneous graph
+# Epochs: 100
+# Nodes feature: 8 feature (2 degree features, 3 amount‑pattern features, 3 balance‑pattern features)
 # ---------------------------------------------------------
 
 #You need to install pyTorch
