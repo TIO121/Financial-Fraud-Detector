@@ -83,7 +83,44 @@ data = Data(
 # ---------------------------------------------------------
 deg_out = degree(data.edge_index[0], num_nodes=data.num_nodes)
 deg_in = degree(data.edge_index[1], num_nodes=data.num_nodes)
-data.x = torch.log1p(torch.stack([deg_out, deg_in], dim=1))
+degree_features = torch.log1p(torch.stack([deg_out, deg_in], dim=1))
+
+# ---------------------------------------------------------
+# Fraud Pattern Features (Node-level)
+# ---------------------------------------------------------
+df["src_id"] = df["nameOrig"].map(node_to_id)
+
+# Pattern 1: Unusual transaction amounts
+amount_stats = df.groupby("src_id")["amount"].agg(
+    mean_amount="mean",
+    max_amount="max"
+).fillna(0)
+amount_stats["amount_ratio"] = amount_stats["max_amount"] / (amount_stats["mean_amount"] + 1e-6)
+
+# Pattern 2: Suspicious balance jumps
+balance_stats = df.groupby("src_id").apply(
+    lambda x: pd.Series({
+        "total_balance_drop": (x["oldbalanceOrg"] - x["newbalanceOrig"]).clip(lower=0).sum(),
+        "total_balance_increase": (x["newbalanceOrig"] - x["oldbalanceOrg"]).clip(lower=0).sum()
+    })
+).fillna(0)
+balance_stats["net_balance_change"] = (
+    balance_stats["total_balance_increase"] - balance_stats["total_balance_drop"]
+)
+
+# Merge fraud features
+fraud_features = amount_stats.join(balance_stats, how="outer").fillna(0)
+
+fraud_feat_tensor = torch.tensor(
+    fraud_features.loc[range(data.num_nodes)].values,
+    dtype=torch.float
+)
+
+# ---------------------------------------------------------
+# Combine degree + fraud features
+# ---------------------------------------------------------
+data.x = torch.cat([degree_features, fraud_feat_tensor], dim=1)
+print("Node feature matrix shape:", data.x.shape)
 
 # ---------------------------------------------------------
 # Convert transaction-level fraud → account-level fraud
@@ -115,7 +152,7 @@ data.val_mask[perm[train_end:val_end]] = True
 data.test_mask[perm[val_end:]] = True
 
 # ---------------------------------------------------------
-# NeighborLoader (kept exactly as you had it)
+# NeighborLoader
 # ---------------------------------------------------------
 train_loader = NeighborLoader(
     data,
@@ -153,7 +190,7 @@ class GraphSAGE(nn.Module):
 # Training setup
 # ---------------------------------------------------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = GraphSAGE(in_channels=2, hidden_channels=64, out_channels=2).to(device)
+model = GraphSAGE(in_channels=8, hidden_channels=64, out_channels=2).to(device)
 data = data.to(device)
 class_weights = class_weights.to(device)
 
@@ -161,7 +198,7 @@ criterion = nn.CrossEntropyLoss(weight=class_weights)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 # ---------------------------------------------------------
-# Evaluation function (Acc, F1, Precision, Recall)
+# Evaluation function
 # ---------------------------------------------------------
 def evaluate(mask):
     model.eval()
@@ -179,7 +216,7 @@ def evaluate(mask):
         return acc, f1, precision, recall
 
 # ---------------------------------------------------------
-# Table for Results
+# Training loop
 # ---------------------------------------------------------
 history = {
     "epoch": [],
@@ -193,9 +230,6 @@ history = {
     "val_recall": []
 }
 
-# ---------------------------------------------------------
-# Training loop (NeighborLoader kept)
-# ---------------------------------------------------------
 for epoch in range(1, 11):
     model.train()
     total_loss = 0
@@ -212,7 +246,7 @@ for epoch in range(1, 11):
     train_acc, train_f1, train_prec, train_rec = evaluate(data.train_mask)
     val_acc, val_f1, val_prec, val_rec = evaluate(data.val_mask)
 
-    print(f"Epoch: {epoch:02d} | Loss: {total_loss:.4f} | "
+    print(f"Epoch {epoch:02d} | Loss: {total_loss:.4f} | "
           f"Train Acc: {train_acc:.4f} F1: {train_f1:.4f} "
           f"Prec: {train_prec:.4f} Rec: {train_rec:.4f} | "
           f"Val Acc: {val_acc:.4f} F1: {val_f1:.4f} "
