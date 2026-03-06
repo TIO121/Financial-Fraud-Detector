@@ -35,7 +35,7 @@ from huggingface_hub import login
 #4) Note: Thats your own unique token to access the Cifer dataset
 # ---------------------------------------------------------
 
-login(token="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")
+login(token="add your own unique access token")
 
 # ---------------------------------------------------------
 # Load dataset
