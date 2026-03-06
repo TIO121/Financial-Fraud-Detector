@@ -230,7 +230,7 @@ history = {
     "val_recall": []
 }
 
-for epoch in range(1, 11):
+for epoch in range(1, 101):
     model.train()
     total_loss = 0
 
