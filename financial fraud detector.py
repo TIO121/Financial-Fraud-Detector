@@ -110,13 +110,19 @@ balance_stats["net_balance_change"] = (
     balance_stats["total_balance_increase"] - balance_stats["total_balance_drop"]
 )
 
-# Merge fraud features
+# Fraud features (amount + balance patterns)
 fraud_features = amount_stats.join(balance_stats, how="outer").fillna(0)
 
+# FIX: ensure fraud_features has a row for every node
+fraud_features = fraud_features.reindex(range(data.num_nodes), fill_value=0)
+
 fraud_feat_tensor = torch.tensor(
-    fraud_features.loc[range(data.num_nodes)].values,
+    fraud_features.values,
     dtype=torch.float
 )
+
+# Combine degree + fraud features
+data.x = torch.cat([degree_features, fraud_feat_tensor], dim=1)
 
 # ---------------------------------------------------------
 # Combine degree + fraud features
@@ -173,20 +179,31 @@ class_weights = class_weights * (2 / class_weights.sum())
 # ---------------------------------------------------------
 # GraphSAGE Model
 # ---------------------------------------------------------
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 class GraphSAGE(nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, dropout=0.2):
         super().__init__()
+
         self.conv1 = SAGEConv(in_channels, hidden_channels)
         self.conv2 = SAGEConv(hidden_channels, hidden_channels)
         self.lin = nn.Linear(hidden_channels, out_channels)
         self.dropout = dropout
 
     def forward(self, x, edge_index):
-        x = F.relu(self.conv1(x, edge_index))
+        x = self.conv1(x, edge_index)
+        x = F.relu(x)
         x = F.dropout(x, p=self.dropout, training=self.training)
-        x = F.relu(self.conv2(x, edge_index))
+
+        x = self.conv2(x, edge_index)
+        x = F.relu(x)
         x = F.dropout(x, p=self.dropout, training=self.training)
-        return self.lin(x)
+
+        x = self.lin(x)
+        return x
+
+model = GraphSAGE(in_channels=8, hidden_channels=64, out_channels=2).to(device)
+
 
 # ---------------------------------------------------------
 # Training setup
