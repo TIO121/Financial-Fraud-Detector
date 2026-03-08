@@ -1,12 +1,13 @@
 # ---------------------------------------------------------
 # GRAPH STRUCTURE (Node Classification for Account Takeover Fraud)
+# Architecture: GraphSAGE but using to GraphSAINT(as sampler)
 # Nodes: nameOrig and nameDest (Accounts)
 # Edges: transaction between the accounts - meaning the transaction between nameOrig and nameDest (nameOrig -> nameDest)
 # Edge features: step, type, amount, oldbalanceOrg, newbalanceOrig, oldbalanceDest, newbalanceDest.
 # Nodes labels: isFraud (1 if the account is involved in a fraudulent transaction, 0 otherwise)
 # Labels: isFraud and isFlaggedFraud
 # Graph type: Homogeneous graph
-# Epochs: 100
+# Epochs: 50
 # Nodes feature: 6 feature (2 degree features, 3 amount‑pattern features(transaction behavior patterns,), unique counterparties)
 # ---------------------------------------------------------
 
@@ -25,6 +26,8 @@ from torch_geometric.data import Data
 from torch_geometric.utils import degree
 from torch_geometric.loader import GraphSAINTRandomWalkSampler
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+# ---- GPU Memory Cleanup ----
+torch.cuda.empty_cache()
 
 
 # ---------------------------------------------------------
