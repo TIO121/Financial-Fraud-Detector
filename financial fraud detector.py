@@ -21,10 +21,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import pandas as pd
 from datasets import load_dataset
+from huggingface_hub import login
 from torch_geometric.nn import SAGEConv
 from torch_geometric.data import Data
 from torch_geometric.utils import degree
-from torch_geometric.loader import GraphSAINTRandomWalkSampler
+from torch_geometric.loader import GraphSAINTRandomWalkSampler, NeighborLoader
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 # ---- GPU Memory Cleanup ----
 torch.cuda.empty_cache()
@@ -39,7 +40,7 @@ torch.cuda.empty_cache()
 #4) Note: Thats your own unique token to access the Cifer dataset
 # ---------------------------------------------------------
 
-login(token="add your own unique access token")
+login(token="your unique token")
 
 # ---------------------------------------------------------
 # Load dataset
@@ -132,7 +133,7 @@ data.edge_attr = (data.edge_attr - data.edge_attr.mean(dim=0)) / (data.edge_attr
 # ---------------------------------------------------------
 # Convert transaction-level fraud → account-level fraud
 # ---------------------------------------------------------
-ode_labels = torch.zeros(num_nodes, dtype=torch.long)
+node_labels = torch.zeros(num_nodes, dtype=torch.long)
 
 fraud_edges = df["isFraud"] == 1
 src_fraud = df["src_id"][fraud_edges].values
@@ -165,7 +166,7 @@ data.test_mask[perm[val_end:]] = True
 class_counts = torch.bincount(data.y)
 class_weights = 1.0 / (class_counts.float() + 1e-6)
 class_weights = class_weights * (2 / class_weights.sum())
-)
+
 
 # ---------------------------------------------------------
 # NeighborLoader
