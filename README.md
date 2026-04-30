@@ -302,17 +302,12 @@ Our model's **recall outperforms all three SOTA comparisons**, meaning it catche
 ```
 Financial-Fraud-Detector/
 │
-├── OG_financial_fraud_detector-traininng.ipynb  ← MAIN FILE — run this
-├── financial_fraud_detector.py                  ← Equivalent .py script
-│
-├── New_financial_fraud_detector.ipynb           ← Experimental notebook
-├── old_financial_fraud_detector.ipynb           ← Early prototype (6 features, GraphSAINT)
+├── main.ipynb  ← MAIN FILE — run this
+
+├── Early_prototype.ipynb           ← Early prototype (6 features, GraphSAINT)
 ├── Team_6_focal_lossfrom.ipynb                  ← Focal loss variant
 │
-├── Fraud_Detection_Deep_Learning_Project.docx   ← Full project report
-├── Fraud_Detecter_Final_Presentation.pptx       ← Final presentation slides
-│
-├── training_results.csv                         ← Generated after training
+
 └── README.md
 ```
 
